@@ -2,6 +2,7 @@ package com.tqms.controller;
 
 import com.tqms.dto.QueueRecordRequest;
 import com.tqms.dto.QueueSummaryResponse;
+import com.tqms.dto.RegistrationResponseDto;
 import com.tqms.model.QueueRecord;
 import com.tqms.model.QueueStatus;
 import com.tqms.service.QueueService;
@@ -27,11 +28,11 @@ public class QueueApiController {
         this.queueService = queueService;
     }
 
-    // POST /api/records - Create a record and token (FR-01)
+    // POST /api/records - Register a patient and generate unique token (FR-01 Feature 1)
     @PostMapping("/records")
-    public ResponseEntity<QueueRecord> createRecord(@Valid @RequestBody QueueRecordRequest request) {
-        QueueRecord created = queueService.createRecord(request);
-        return new ResponseEntity<>(created, HttpStatus.CREATED);
+    public ResponseEntity<RegistrationResponseDto> registerPatient(@Valid @RequestBody QueueRecordRequest request) {
+        RegistrationResponseDto response = queueService.registerPatient(request);
+        return new ResponseEntity<>(response, HttpStatus.CREATED);
     }
 
     // GET /api/records - List the queue (FR-02)
@@ -94,6 +95,7 @@ public class QueueApiController {
                     response.put("status", record.getStatus());
                     response.put("priority", record.getPriority());
                     response.put("patientsAhead", queueService.getPatientsAhead(token));
+                    response.put("estimatedWaitMinutes", queueService.calculateEstimatedWaitMinutes(token));
                     return ResponseEntity.ok(response);
                 })
                 .orElse(ResponseEntity.notFound().build());
