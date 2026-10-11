@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TQMS - Telemedicine Queue Management System</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}" href="/css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header class="app-header">
+        <div class="container header-container">
+            <div class="brand">
+                <span class="brand-badge">DevOps CI/CD</span>
+                <h1 id="app-title">Telemedicine Queue Management System</h1>
+            </div>
+            <div class="header-status">
+                <span class="status-dot"></span>
+                <span id="system-health">System Online (Port 8081)</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="container main-content">
+        <!-- Top Stats Dashboard -->
+        <section class="stats-grid" id="stats-dashboard">
+            <div class="stat-card stat-total">
+                <div class="stat-value" id="stat-total" th:text="${summary.totalRecords}">0</div>
+                <div class="stat-label">Total Patients</div>
+            </div>
+            <div class="stat-card stat-waiting">
+                <div class="stat-value" id="stat-waiting" th:text="${summary.waitingCount}">0</div>
+                <div class="stat-label">Waiting</div>
+            </div>
+            <div class="stat-card stat-called">
+                <div class="stat-value" id="stat-called" th:text="${summary.calledCount}">0</div>
+                <div class="stat-label">Called</div>
+            </div>
+            <div class="stat-card stat-consultation">
+                <div class="stat-value" id="stat-consultation" th:text="${summary.inConsultationCount}">0</div>
+                <div class="stat-label">In Consultation</div>
+            </div>
+            <div class="stat-card stat-completed">
+                <div class="stat-value" id="stat-completed" th:text="${summary.completedCount}">0</div>
+                <div class="stat-label">Completed</div>
+            </div>
+        </section>
+
+        <!-- Search & Patient Token Lookup -->
+        <section class="card lookup-section">
+            <h2>Patient Token Lookup</h2>
+            <p class="subtitle">Patients can check their real-time position and estimated wait time without logging in.</p>
+            <div class="lookup-form">
+                <input type="text" id="token-input" placeholder="Enter Token (e.g., TQ-001)" />
+                <button type="button" id="btn-lookup" class="btn btn-primary" onclick="lookupToken()">Track Token</button>
+            </div>
+            <div id="lookup-result" class="lookup-result-box" style="display: none;">
+                <!-- Result dynamically populated via JavaScript -->
+            </div>
+        </section>
+
+        <!-- Queue Management & Patient Registration -->
+        <div class="content-split">
+            <!-- Left: Live Queue Table -->
+            <section class="card queue-section">
+                <div class="section-header">
+                    <h2>Live Patient Queue</h2>
+                    <div class="filter-controls">
+                        <input type="text" id="search-input" placeholder="Search by name or token..." onkeyup="filterQueue()" />
+                        <select id="status-filter" onchange="filterQueue()">
+                            <option value="">All Statuses</option>
+                            <option value="WAITING">Waiting</option>
+                            <option value="CALLED">Called</option>
+                            <option value="IN_CONSULTATION">In Consultation</option>
+                            <option value="COMPLETED">Completed</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="queue-table" id="queue-table">
+                        <thead>
+                            <tr>
+                                <th>Token</th>
+                                <th>Patient Name</th>
+                                <th>Department</th>
+                                <th>Priority</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="queue-tbody">
+                            <tr th:each="r : ${records}" th:id="'row-' + ${r.id}">
+                                <td class="token-cell" th:text="${r.tokenNo}">TQ-001</td>
+                                <td th:text="${r.patientName}">John Doe</td>
+                                <td th:text="${r.department}">General</td>
+                                <td>
+                                    <span th:class="'badge priority-' + ${r.priority.name().toLowerCase()}" th:text="${r.priority}">NORMAL</span>
+                                </td>
+                                <td>
+                                    <span th:class="'badge status-' + ${r.status.name().toLowerCase()}" th:text="${r.status}">WAITING</span>
+                                </td>
+                                <td class="actions-cell">
+                                    <button class="btn btn-sm btn-action" th:onclick="'updateStatus(' + ${r.id} + ', \'CALLED\')'">Call</button>
+                                    <button class="btn btn-sm btn-action" th:onclick="'updateStatus(' + ${r.id} + ', \'IN_CONSULTATION\')'">Consult</button>
+                                    <button class="btn btn-sm btn-action btn-success" th:onclick="'updateStatus(' + ${r.id} + ', \'COMPLETED\')'">Complete</button>
+                                </td>
+                            </tr>
+                            <tr th:if="${#lists.isEmpty(records)}" id="empty-queue-row">
+                                <td colspan="6" class="text-center empty-state">No patients currently in queue. Register a new patient to begin.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Right: Patient Registration Form -->
+            <section class="card form-section">
+                <h2>Register Patient</h2>
+                <p class="subtitle">Front-desk receptionist registration desk</p>
+                <form id="register-form" onsubmit="registerPatient(event)">
+                    <div class="form-group">
+                        <label for="patientName">Patient Name *</label>
+                        <input type="text" id="patientName" required placeholder="Full Name" />
+                    </div>
+                    <div class="form-group">
+                        <label for="contact">Contact Number</label>
+                        <input type="text" id="contact" placeholder="e.g. +91 9876543210" />
+                    </div>
+                    <div class="form-group">
+                        <label for="department">Department</label>
+                        <select id="department">
+                            <option value="General Medicine">General Medicine</option>
+                            <option value="Cardiology">Cardiology</option>
+                            <option value="Pediatrics">Pediatrics</option>
+                            <option value="Dermatology">Dermatology</option>
+                            <option value="Orthopedics">Orthopedics</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="priority">Priority</label>
+                        <select id="priority">
+                            <option value="NORMAL">Normal</option>
+                            <option value="URGENT">Urgent (Priority High)</option>
+                        </select>
+                    </div>
+                    <button type="submit" id="btn-register" class="btn btn-primary btn-block">Generate Token &amp; Enqueue</button>
+                </form>
+            </section>
+        </div>
+    </main>
+
+    <footer class="app-footer">
+        <div class="container footer-content">
+            <p>DevOps Project: Telemedicine Queue Management System &bull; Roll: 23102A0017 (Sheshank Singh)</p>
+            <p>Curriculum CI/CD Automation Stack: Git, GitHub, Jenkins, Selenium, Docker, Ansible/Puppet</p>
+        </div>
+    </footer>
+
+    <script th:src="@{/js/app.js}" src="/js/app.js"></script>
+</body>
+</html>
