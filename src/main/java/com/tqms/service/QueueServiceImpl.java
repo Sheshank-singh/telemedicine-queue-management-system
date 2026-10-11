@@ -2,6 +2,7 @@ package com.tqms.service;
 
 import com.tqms.dto.QueueRecordRequest;
 import com.tqms.dto.QueueSummaryResponse;
+import com.tqms.dto.RegistrationResponseDto;
 import com.tqms.model.Priority;
 import com.tqms.model.QueueRecord;
 import com.tqms.model.QueueStatus;
@@ -12,18 +13,16 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicLong;
 
 @Service
 @Transactional
 public class QueueServiceImpl implements QueueService {
 
+    private static final int MINUTES_PER_CONSULTATION = 12;
+
     private final QueueRecordRepository queueRecordRepository;
     private final UserRepository userRepository;
-    private final AtomicLong tokenSequence = new AtomicLong(100);
 
     @Autowired
     public QueueServiceImpl(QueueRecordRepository queueRecordRepository, UserRepository userRepository) {
@@ -54,12 +53,33 @@ public class QueueServiceImpl implements QueueService {
         record.setTokenNo(tokenNo);
         record.setPatientName(request.getPatientName().trim());
         record.setContact(request.getContact());
-        record.setDepartment(request.getDepartment());
+        record.setDepartment(request.getDepartment().trim());
+        record.setSymptoms(request.getSymptoms());
         record.setPriority(request.getPriority() != null ? request.getPriority() : Priority.NORMAL);
         record.setStatus(QueueStatus.WAITING);
         record.setCreatedBy(creator);
 
         return queueRecordRepository.save(record);
+    }
+
+    @Override
+    public RegistrationResponseDto registerPatient(QueueRecordRequest request) {
+        QueueRecord saved = createRecord(request);
+        long ahead = getPatientsAhead(saved.getTokenNo());
+        int estimatedWait = calculateEstimatedWaitMinutes(saved.getTokenNo());
+
+        return new RegistrationResponseDto(
+                saved.getId(),
+                saved.getTokenNo(),
+                saved.getPatientName(),
+                saved.getContact(),
+                saved.getDepartment(),
+                saved.getPriority(),
+                saved.getStatus(),
+                ahead,
+                estimatedWait,
+                saved.getCreatedAt()
+        );
     }
 
     @Override
@@ -91,8 +111,11 @@ public class QueueServiceImpl implements QueueService {
         if (request.getContact() != null) {
             existing.setContact(request.getContact().trim());
         }
-        if (request.getDepartment() != null) {
+        if (request.getDepartment() != null && !request.getDepartment().isBlank()) {
             existing.setDepartment(request.getDepartment().trim());
+        }
+        if (request.getSymptoms() != null) {
+            existing.setSymptoms(request.getSymptoms().trim());
         }
         if (request.getPriority() != null) {
             existing.setPriority(request.getPriority());
@@ -116,11 +139,6 @@ public class QueueServiceImpl implements QueueService {
     private void validateStatusTransition(QueueStatus current, QueueStatus next) {
         if (current == next) return;
 
-        // Business rules for transitions
-        // WAITING -> CALLED, CANCELLED, NO_SHOW
-        // CALLED -> IN_CONSULTATION, WAITING, NO_SHOW, CANCELLED
-        // IN_CONSULTATION -> COMPLETED, CANCELLED
-        // Terminal states: COMPLETED, CANCELLED cannot normally revert
         if (current == QueueStatus.COMPLETED) {
             throw new IllegalStateException("Completed records cannot change status.");
         }
@@ -166,5 +184,12 @@ public class QueueServiceImpl implements QueueService {
             return 0;
         }
         return queueRecordRepository.countWaitingAhead(recordOpt.get().getCreatedAt());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public int calculateEstimatedWaitMinutes(String tokenNo) {
+        long ahead = getPatientsAhead(tokenNo);
+        return (int) (ahead * MINUTES_PER_CONSULTATION);
     }
 }

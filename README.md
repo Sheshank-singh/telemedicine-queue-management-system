@@ -105,8 +105,8 @@ project/
 git clone https://github.com/Sheshank-singh/telemedicine-queue-management-system.git
 cd telemedicine-queue-management-system
 
-# 2. Compile and package the WAR artifact
-mvn clean package
+# 2. Package optimized production WAR with metrics and profile validation
+mvn clean package -Pmetrics -Dspring.profiles.active=prod
 
 # 3. Run application on local port 8081
 mvn spring-boot:run
