@@ -2,6 +2,7 @@ package com.tqms.service;
 
 import com.tqms.dto.QueueRecordRequest;
 import com.tqms.dto.QueueSummaryResponse;
+import com.tqms.dto.RegistrationResponseDto;
 import com.tqms.model.QueueRecord;
 import com.tqms.model.QueueStatus;
 
@@ -11,6 +12,8 @@ import java.util.Optional;
 public interface QueueService {
 
     QueueRecord createRecord(QueueRecordRequest request);
+
+    RegistrationResponseDto registerPatient(QueueRecordRequest request);
 
     List<QueueRecord> getAllRecords();
 
@@ -27,4 +30,6 @@ public interface QueueService {
     QueueSummaryResponse getSummary();
 
     long getPatientsAhead(String tokenNo);
+
+    int calculateEstimatedWaitMinutes(String tokenNo);
 }
