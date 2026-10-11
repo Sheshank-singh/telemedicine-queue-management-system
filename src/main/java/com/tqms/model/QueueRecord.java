@@ -27,6 +27,9 @@ public class QueueRecord {
     @Column(name = "department", length = 40)
     private String department;
 
+    @Column(name = "symptoms", length = 255)
+    private String symptoms;
+
     @NotNull
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
@@ -116,6 +119,14 @@ public class QueueRecord {
 
     public void setDepartment(String department) {
         this.department = department;
+    }
+
+    public String getSymptoms() {
+        return symptoms;
+    }
+
+    public void setSymptoms(String symptoms) {
+        this.symptoms = symptoms;
     }
 
     public Priority getPriority() {
