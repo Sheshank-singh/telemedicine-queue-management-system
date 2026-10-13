@@ -51,6 +51,12 @@ pipeline {
                     }
                 }
             }
+            post {
+                always {
+                    junit testResults: '**/target/surefire-reports/*.xml', allowEmptyResults: true
+                    archiveArtifacts artifacts: '**/target/selenium-screenshots/*.png', allowEmptyArchive: true
+                }
+            }
         }
 
         stage('Package') {
