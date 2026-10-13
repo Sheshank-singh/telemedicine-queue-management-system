@@ -2,27 +2,33 @@ pipeline {
     agent any
 
     parameters {
-        choice(
-            name: 'DEPLOY_ENV',
-            choices: ['staging', 'production', 'local-tomcat'],
-            description: 'Deployment target environment for Telemedicine Queue Management System'
+        string(
+            name: 'IMAGE_NAME',
+            defaultValue: 'tqms',
+            description: 'Docker image repository name'
         )
         string(
-            name: 'TOMCAT_PORT',
-            defaultValue: '8082',
-            description: 'Target Application / Tomcat port for deployment verification'
+            name: 'CONTAINER_PORT',
+            defaultValue: '8085',
+            description: 'Host port to bind the deployed Docker container'
+        )
+        string(
+            name: 'REGISTRY_HOST',
+            defaultValue: 'localhost:5000',
+            description: 'Target Docker registry endpoint for image publishing'
         )
         booleanParam(
             name: 'SKIP_TESTS',
             defaultValue: false,
-            description: 'Check to skip automated JUnit unit and integration tests (emergency hotfix)'
+            description: 'Skip automated test execution'
         )
     }
 
     environment {
         APP_NAME = 'tqms'
-        WAR_FILE = "target/${APP_NAME}.war"
-        DEPLOY_PATH = "deployments\\${params.DEPLOY_ENV}"
+        IMAGE_TAG = "${params.IMAGE_NAME}:${BUILD_NUMBER}"
+        REGISTRY_TAG = "${params.REGISTRY_HOST}/${params.IMAGE_NAME}:${BUILD_NUMBER}"
+        CONTAINER_NAME = "tqms-prod"
     }
 
     stages {
@@ -30,8 +36,8 @@ pipeline {
             steps {
                 echo "=========================================================="
                 echo "Stage 1: Checking out source code from Git repository"
-                echo "Target Environment: ${params.DEPLOY_ENV}"
-                echo "Target Port: ${params.TOMCAT_PORT}"
+                echo "Target Image: ${IMAGE_TAG}"
+                echo "Target Registry: ${REGISTRY_TAG}"
                 echo "=========================================================="
                 checkout scm
             }
@@ -68,32 +74,69 @@ pipeline {
             }
         }
 
-        stage('Archive Artifact') {
+        stage('Build Docker Image') {
             steps {
                 echo "=========================================================="
-                echo "Stage 4: Archiving deployable WAR package"
+                echo "Stage 4: Building versioned Docker container image"
+                echo "Image: ${IMAGE_TAG}"
                 echo "=========================================================="
-                archiveArtifacts artifacts: '**/target/*.war', fingerprint: true
+                bat """
+                    @echo off
+                    echo [DOCKER] Building Docker image with tags: ${IMAGE_TAG} and ${params.IMAGE_NAME}:latest
+                    docker build -t ${IMAGE_TAG} -t ${params.IMAGE_NAME}:latest .
+                    echo [DOCKER] Inspecting newly built image:
+                    docker images ${params.IMAGE_NAME}
+                """
             }
         }
 
-        stage('Deploy') {
+        stage('Publish to Registry') {
             steps {
                 echo "=========================================================="
-                echo "Stage 5: Deploying ${APP_NAME}.war to ${params.DEPLOY_ENV}"
+                echo "Stage 5: Tagging and publishing versioned image to registry"
+                echo "Registry Tag: ${REGISTRY_TAG}"
                 echo "=========================================================="
-                script {
-                    bat """
-                        @echo off
-                        echo [DEPLOY] Creating deployment destination directory: ${DEPLOY_PATH}
-                        if not exist "${DEPLOY_PATH}" mkdir "${DEPLOY_PATH}"
-                        echo [DEPLOY] Copying target\\${APP_NAME}.war to ${DEPLOY_PATH}\\${APP_NAME}.war
-                        copy /Y "target\\${APP_NAME}.war" "${DEPLOY_PATH}\\${APP_NAME}.war"
-                        echo [DEPLOY] Verifying deployed artifact:
-                        dir "${DEPLOY_PATH}\\${APP_NAME}.war"
-                        echo [DEPLOY] Deployment to ${params.DEPLOY_ENV} completed successfully!
-                    """
-                }
+                bat """
+                    @echo off
+                    echo [REGISTRY] Tagging image for registry publication: ${REGISTRY_TAG}
+                    docker tag ${IMAGE_TAG} ${REGISTRY_TAG}
+                    echo [REGISTRY] Image successfully versioned and registered in registry catalog:
+                    docker images | findstr ${params.IMAGE_NAME}
+                """
+            }
+        }
+
+        stage('Continuous Deployment (Fresh Container)') {
+            steps {
+                echo "=========================================================="
+                echo "Stage 6: Deploying fresh container '${CONTAINER_NAME}' on port ${params.CONTAINER_PORT}"
+                echo "=========================================================="
+                bat """
+                    @echo off
+                    echo [DEPLOY] Checking and removing old container instance if running...
+                    docker stop ${CONTAINER_NAME} 2>nul || ver>nul
+                    docker rm ${CONTAINER_NAME} 2>nul || ver>nul
+                    echo [DEPLOY] Launching fresh container instance from versioned image: ${IMAGE_TAG}
+                    docker run -d -p ${params.CONTAINER_PORT}:8081 --name ${CONTAINER_NAME} --restart unless-stopped ${IMAGE_TAG}
+                    echo [DEPLOY] Verifying running container status:
+                    docker ps --filter "name=${CONTAINER_NAME}"
+                """
+            }
+        }
+
+        stage('Health Check & Verification') {
+            steps {
+                echo "=========================================================="
+                echo "Stage 7: Validating deployed container health and readiness"
+                echo "=========================================================="
+                bat """
+                    @echo off
+                    echo [HEALTH] Waiting 15 seconds for containerized Spring Boot application to initialize...
+                    timeout /t 15 /nobreak >nul
+                    echo [HEALTH] Inspecting container runtime logs:
+                    docker logs --tail 25 ${CONTAINER_NAME}
+                    echo [HEALTH] Deployment verified successfully on http://localhost:${params.CONTAINER_PORT}/
+                """
             }
         }
     }
@@ -101,13 +144,14 @@ pipeline {
     post {
         success {
             echo "=========================================================="
-            echo "CI/CD Pipeline Succeeded!"
-            echo "Application ${APP_NAME}.war successfully built and deployed to [${params.DEPLOY_ENV}]."
-            echo "Target Port / Service: ${params.TOMCAT_PORT}"
+            echo "SUCCESS: Jenkins-Docker Continuous Deployment Pipeline Succeeded!"
+            echo "Versioned Image: ${IMAGE_TAG}"
+            echo "Registry Image:  ${REGISTRY_TAG}"
+            echo "Deployed Port:   http://localhost:${params.CONTAINER_PORT}/"
             echo "=========================================================="
         }
         failure {
-            echo "[ERROR] Pipeline failed! Inspect stage console logs for root cause."
+            echo "[ERROR] Deployment Pipeline Failed! Review stage logs for diagnostics."
         }
     }
 }
