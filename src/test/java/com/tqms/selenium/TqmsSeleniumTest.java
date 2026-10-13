@@ -114,7 +114,7 @@ public class TqmsSeleniumTest {
             driver.get(getBaseUrl());
 
             // 1. Assert Title
-            assertEquals("TQMS - Telemedicine Queue Management System", driver.getTitle(),
+            assertEquals("WRONG_TITLE_DEFECT_SIMULATION", driver.getTitle(),
                     "Web application page title must match SRS specification");
 
             // 2. Assert App Header & Brand
