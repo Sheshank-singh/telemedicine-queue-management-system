@@ -1,0 +1,9 @@
+.git
+.github
+*.md
+Documentation/
+target/classes
+target/test-classes
+target/surefire-reports
+target/selenium-screenshots
+target/generated-sources
