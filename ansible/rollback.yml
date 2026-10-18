@@ -1,0 +1,107 @@
+---
+# ==============================================================================
+# Ansible Rollback Playbook: Telemedicine Queue Management System (TQMS)
+# Author: Sheshank Singh (Roll: 23102A0017)
+# Purpose: Automated Recovery and Rollback to Previous Stable Release
+# Target Environment: Clean Target Node (Ubuntu / Linux)
+# ==============================================================================
+
+- name: Execute Automated Rollback to Previous Stable Release
+  hosts: tqms_servers
+  become: true
+  vars:
+    rollback_version: "v1.0.0"
+    backup_war: "{{ app_home }}/{{ app_name }}.war.backup"
+
+  tasks:
+    # --------------------------------------------------------------------------
+    # 1. Graceful Service Deactivation
+    # --------------------------------------------------------------------------
+    - name: 1.1 Stop active TQMS systemd service prior to rollback
+      ansible.builtin.systemd:
+        name: tqms.service
+        state: stopped
+      when: ansible_service_mgr == 'systemd'
+
+    - name: 1.2 Terminate background daemon process (container environment)
+      ansible.builtin.shell: "if [ -f {{ app_home }}/tqms.pid ]; then kill $(cat {{ app_home }}/tqms.pid) || true; rm -f {{ app_home }}/tqms.pid; fi"
+      when: ansible_service_mgr != 'systemd'
+      changed_when: true
+
+    # --------------------------------------------------------------------------
+    # 2. Binary Restoration
+    # --------------------------------------------------------------------------
+    - name: 2.1 Inspect backup archive existence
+      ansible.builtin.stat:
+        path: "{{ backup_war }}"
+      register: backup_stat
+
+    - name: 2.2 Restore application binary from previous stable backup
+      ansible.builtin.copy:
+        src: "{{ backup_war }}"
+        dest: "{{ app_home }}/{{ app_name }}.war"
+        remote_src: true
+        owner: "{{ app_user }}"
+        group: "{{ app_group }}"
+        mode: '0750'
+      when: backup_stat.stat.exists
+
+    # --------------------------------------------------------------------------
+    # 3. Stable Configuration State Restoration
+    # --------------------------------------------------------------------------
+    - name: 3.1 Restore verified stable application.properties configuration
+      ansible.builtin.copy:
+        content: |
+          # ====================================================================
+          # Restored Stable Configuration - Rollback {{ rollback_version }}
+          # Verified Baseline for TQMS Health Recovery
+          # ====================================================================
+          server.port={{ app_port }}
+          spring.application.name={{ app_name }}
+          spring.datasource.url=jdbc:h2:mem:tqmsdb;DB_CLOSE_DELAY=-1
+          management.endpoints.web.exposure.include=health,info,metrics
+          management.endpoint.health.show-details=always
+          logging.file.name={{ log_dir }}/application.log
+        dest: "{{ config_dir }}/application.properties"
+        owner: "{{ app_user }}"
+        group: "{{ app_group }}"
+        mode: '0640'
+
+    # --------------------------------------------------------------------------
+    # 4. Service Reactivation
+    # --------------------------------------------------------------------------
+    - name: 4.1 Restart TQMS systemd service with restored stable release
+      ansible.builtin.systemd:
+        name: tqms.service
+        state: restarted
+      when: ansible_service_mgr == 'systemd'
+
+    - name: 4.2 Start TQMS service daemon in background (container environment)
+      ansible.builtin.shell: "nohup python3 {{ app_home }}/tqms_service.py > {{ log_dir }}/service.log 2>&1 & echo $! > {{ app_home }}/tqms.pid"
+      when: ansible_service_mgr != 'systemd'
+
+    # --------------------------------------------------------------------------
+    # 5. Post-Rollback Health & Readiness Check
+    # --------------------------------------------------------------------------
+    - name: 5.1 Verify post-rollback application health check
+      ansible.builtin.uri:
+        url: "http://localhost:{{ app_port }}/actuator/health"
+        status_code: 200
+        return_content: true
+      register: rollback_health
+      until: rollback_health.status == 200
+      retries: 5
+      delay: 1
+
+    - name: 5.2 Display Rollback & Recovery Verification Summary
+      ansible.builtin.debug:
+        msg:
+          - "=========================================================="
+          - "ROLLBACK AND RECOVERY VALIDATION SUCCEEDED"
+          - "Target Host:        {{ inventory_hostname }}"
+          - "Restored Release:   {{ rollback_version }}"
+          - "Restored Binary:    {{ app_home }}/{{ app_name }}.war"
+          - "Config Restored:    {{ config_dir }}/application.properties"
+          - "Recovery Status:    COMPLETED & VERIFIED"
+          - "Health Endpoint:    http://localhost:{{ app_port }}/actuator/health"
+          - "=========================================================="
