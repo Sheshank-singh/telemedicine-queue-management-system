@@ -1,0 +1,18 @@
+[Unit]
+Description=Telemedicine Queue Management System (TQMS) Service
+After=network.target syslog.target
+
+[Service]
+Type=simple
+User={{ app_user }}
+Group={{ app_group }}
+WorkingDirectory={{ app_home }}
+ExecStart=/usr/bin/java -Dspring.config.location={{ config_dir }}/application.properties -jar {{ app_home }}/{{ app_name }}.war
+Restart=always
+RestartSec=10
+StandardOutput=append:{{ log_dir }}/service.log
+StandardError=append:{{ log_dir }}/error.log
+SuccessExitStatus=143
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,26 @@
+# ==============================================================================
+# TQMS Production Configuration - Managed by Ansible
+# Host: {{ inventory_hostname }} | Port: {{ app_port }}
+# ==============================================================================
+server.port={{ app_port }}
+spring.application.name={{ app_name }}
+
+# Production In-Memory / Relational Database Setup
+spring.datasource.url=jdbc:h2:mem:tqmsdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+spring.datasource.driverClassName=org.h2.Driver
+spring.datasource.username=sa
+spring.datasource.password=
+
+# JPA and Hibernate
+spring.jpa.database-platform=org.hibernate.dialect.H2Dialect
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=false
+
+# Actuator Health & Metrics
+management.endpoints.web.exposure.include=health,info,metrics
+management.endpoint.health.show-details=always
+
+# Logging configuration
+logging.file.name={{ log_dir }}/application.log
+logging.level.root=INFO
+logging.level.com.tqms=DEBUG

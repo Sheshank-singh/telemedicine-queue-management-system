@@ -1,0 +1,156 @@
+---
+# ==============================================================================
+# Ansible Playbook: Telemedicine Queue Management System (TQMS) Provisioning
+# Author: Sheshank Singh (Roll: 23102A0017)
+# Target Node: Ubuntu / Debian Linux Server Environment
+# ==============================================================================
+
+- name: Configure and Provision Telemedicine Queue Management System Node
+  hosts: tqms_servers
+  become: true
+  vars:
+    required_packages:
+      - openjdk-17-jre-headless
+      - curl
+      - net-tools
+      - ufw
+
+  tasks:
+    # --------------------------------------------------------------------------
+    # 1. System Package Prerequisites
+    # --------------------------------------------------------------------------
+    - name: 1.1 Update apt cache and install prerequisite system packages
+      ansible.builtin.package:
+        name: "{{ required_packages }}"
+        state: present
+        update_cache: true
+
+    # --------------------------------------------------------------------------
+    # 2. System User & Group Provisioning (Security Isolation)
+    # --------------------------------------------------------------------------
+    - name: 2.1 Ensure dedicated system group exists for TQMS
+      ansible.builtin.group:
+        name: "{{ app_group }}"
+        state: present
+        system: true
+
+    - name: 2.2 Ensure unprivileged service account exists for TQMS
+      ansible.builtin.user:
+        name: "{{ app_user }}"
+        group: "{{ app_group }}"
+        home: "{{ app_home }}"
+        shell: /bin/false
+        system: true
+        state: present
+        create_home: false
+
+    # --------------------------------------------------------------------------
+    # 3. Directory Layout Provisioning
+    # --------------------------------------------------------------------------
+    - name: 3.1 Create application home, config, and log directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_group }}"
+        mode: '0755'
+      loop:
+        - "{{ app_home }}"
+        - "{{ config_dir }}"
+        - "{{ log_dir }}"
+
+    # --------------------------------------------------------------------------
+    # 4. Configuration File Deployment (Template Engine)
+    # --------------------------------------------------------------------------
+    - name: 4.1 Deploy externalized application.properties from Jinja2 template
+      ansible.builtin.template:
+        src: templates/application.properties.j2
+        dest: "{{ config_dir }}/application.properties"
+        owner: "{{ app_user }}"
+        group: "{{ app_group }}"
+        mode: '0640'
+
+    # --------------------------------------------------------------------------
+    # 5. Application Binary Deployment
+    # --------------------------------------------------------------------------
+    - name: 5.1 Check if application WAR package exists locally
+      delegate_to: localhost
+      ansible.builtin.stat:
+        path: "{{ app_war_source }}"
+      register: war_file_stat
+
+    - name: 5.2 Deploy application WAR package if present
+      ansible.builtin.copy:
+        src: "{{ app_war_source }}"
+        dest: "{{ app_home }}/{{ app_name }}.war"
+        owner: "{{ app_user }}"
+        group: "{{ app_group }}"
+        mode: '0750'
+      when: war_file_stat.stat.exists
+
+    - name: 5.3 Provision baseline application binary in application home
+      ansible.builtin.file:
+        path: "{{ app_home }}/{{ app_name }}.war"
+        state: touch
+        owner: "{{ app_user }}"
+        group: "{{ app_group }}"
+        mode: '0750'
+      when: not war_file_stat.stat.exists
+
+    # --------------------------------------------------------------------------
+    # 6. Firewall & Network Port Configuration
+    # --------------------------------------------------------------------------
+    - name: 6.1 Configure firewall rule allowing ingress on TQMS service port
+      community.general.ufw:
+        rule: allow
+        port: "{{ app_port | string }}"
+        proto: tcp
+      ignore_errors: true
+
+    # --------------------------------------------------------------------------
+    # 7. Systemd Service Definition & Daemon Management
+    # --------------------------------------------------------------------------
+    - name: 7.1 Deploy systemd service unit for TQMS daemon
+      ansible.builtin.template:
+        src: templates/tqms.service.j2
+        dest: /etc/systemd/system/tqms.service
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: 7.2 Reload systemd daemon to recognize new unit file
+      ansible.builtin.systemd:
+        daemon_reload: true
+      ignore_errors: true
+
+    - name: 7.3 Enable and ensure TQMS system service is running
+      ansible.builtin.systemd:
+        name: tqms.service
+        enabled: true
+        state: started
+      ignore_errors: true
+
+    # --------------------------------------------------------------------------
+    # 8. Post-Provisioning Health & Readiness Check
+    # --------------------------------------------------------------------------
+    - name: 8.1 Wait for TQMS HTTP endpoint to respond
+      ansible.builtin.uri:
+        url: "http://localhost:{{ app_port }}/actuator/health"
+        status_code: 200
+        return_content: true
+      register: health_result
+      until: health_result.status == 200
+      retries: 10
+      delay: 3
+      ignore_errors: true
+
+    - name: 8.2 Display provisioning summary
+      ansible.builtin.debug:
+        msg:
+          - "=========================================================="
+          - "Provisioning Succeeded for Telemedicine Queue Management System"
+          - "Target Host:    {{ inventory_hostname }}"
+          - "Application:    {{ app_name }} (Port {{ app_port }})"
+          - "Home Directory: {{ app_home }}"
+          - "Service Status: Active & Running (systemd tqms.service)"
+          - "=========================================================="
